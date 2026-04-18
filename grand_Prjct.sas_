@@ -1,0 +1,156 @@
+/*Importing data to SAS*/
+filename xlfile '/home/u61944720/churn_dataset_excel.xlsx';
+proc import datafile=xlfile
+dbms = xlsx
+out=xl_data
+replace;
+getnames =yes;
+run;
+filename textfile '/home/u61944720/churn_dataset_txt.txt'; 
+proc import datafile=textfile
+dbms=dlm
+out=txt_data
+replace;
+delimiter='|';
+getnames=yes;
+run;
+filename csvfile '/home/u61944720/churn_dataset_csv.csv';
+proc import datafile=csvfile
+dbms=csv
+out=csv_data
+replace;
+getnames=yes;
+run;
+
+/* Standardizing data */
+data xl_clean;
+set xl_data (rename=(cost=treatment_cost count_last_60_days=visit_count_last_60_days));
+source="EXCEL";
+run;
+data csv_clean;
+set csv_data (rename=(patient_age=age flag=dropout_flag));
+source= "CSV";
+run;
+data txt_clean;
+set txt_data (rename=(Patient_number=patient_id duration=treatment_duration));
+source="TXT";
+age = input(age, best.);
+tenure_months = input(tenure_months, best.);
+monthly_spend = input(monthly_spend, best.);
+num_logins_last_30_days = input(num_logins_last_30_days, best.);
+last_login_days_ago = input(last_login_days_ago, best.);
+churn_flag = input(churn_flag, best.);
+run;
+data master_set;
+set xl_clean csv_clean txt_clean;
+run;
+
+/*checking*/
+/*proc contents data=master_set; run;
+proc print data=master_set (obs=3); run;*/
+
+/*tracking activities*/
+data tracking;
+length treatment_group $10 value $10 activity_status $10 recency $10;
+
+set master_set;
+
+if treatment_duration < 6 then treatment_group = "New";
+else if treatment_duration < 24 then treatment_group = "Growing";
+else treatment_group = "Loyal";
+
+if treatment_cost < 50 then value="Low";
+else if treatment_cost <120 then value="Mid";
+else value = "High";
+
+if visit_count_last_60_days = . then activity_status = "Unknown";
+else if visit_count_last_60_days < 5 then activity_status = "Low";
+else if visit_count_last_60_days < 15 then activity_status = "Medium";
+else activity_status = "High";
+
+if days_since_last_visit < 7 then recency = "Active";
+else if days_since_last_visit < 30 then recency = "At Risk";
+else recency = "Inactive";   
+
+if activity_status = "Low" or recency = "Inactive" then risk_flag = 1;
+else risk_flag = 0;
+
+run;
+/*Insights using SQL analysis*/
+proc sql;
+select count(*) as total_patients,
+sum(dropout_flag) as droppedout_patients,
+calculated droppedout_patients / calculated total_patients as dropout_rate
+from tracking;
+quit;
+/*churning by age*/
+proc sql;
+    select 
+        age,
+        count(*) as total,
+        sum(dropout_flag) as droppedout,
+        calculated droppedout / calculated total as dropout_rate
+    from tracking
+    group by age
+    order by dropout_rate desc;
+quit;
+/*churning by gender*/
+proc sql;
+    select 
+        gender,
+        count(*) as total,
+        sum(dropout_flag) as droppedout,
+        calculated droppedout / calculated total as dropout_rate
+    from tracking
+    group by gender;
+    quit;
+/*churning by treatmentgroup*/
+proc sql;
+select treatment_group,
+count(*) as total, sum(dropout_flag) as droppedout,
+calculated droppedout / calculated total as dropout_rate
+from tracking
+group by treatment_group;
+quit;
+/*churning by acitivity level*/
+proc sql;
+select activity_status,
+count(*) as total,
+sum(dropout_flag) as droppedout,
+calculated droppedout / calculated total as dropout_rate
+from tracking
+group by activity_status;
+quit;
+/*churning by recency*/
+proc sql;
+select 
+recency,
+count(*) as total,
+sum(dropout_flag) as droppedout,
+calculated droppedout / calculated total as dropout_rate
+from tracking
+group by recency;
+quit;
+/*churning as value*/
+proc sql;
+select value, count(*) as total, sum(dropout_flag) as droppedout,
+calculated droppedout / calculated total as dropout_rate
+from tracking 
+group by value;
+quit;
+
+/*validating statistically 1. ttest*/
+proc ttest data=tracking;
+class dropout_flag;
+var treatment_duration treatment_cost visit_count_last_60_days days_since_last_visit;
+run;
+
+proc freq data=tracking;
+tables treatment_group * dropout_flag / chisq;
+run;
+proc freq data=tracking;
+tables activity_status * dropout_flag / chisq;
+run;
+proc freq data=tracking;
+tables recency * dropout_flag / chisq;
+run;
