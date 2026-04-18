@@ -139,7 +139,7 @@ from tracking
 group by value;
 quit;
 
-/*validating statistically 1. ttest*/
+/*validating statistically*/
 proc ttest data=tracking;
 class dropout_flag;
 var treatment_duration treatment_cost visit_count_last_60_days days_since_last_visit;
@@ -155,8 +155,7 @@ proc freq data=tracking;
 tables recency * dropout_flag / chisq;
 run;
 %macro churn_full(var, title_name);
-
-    /* SQL ANALYSIS */
+/* SQL ANALYSIS */
     proc sql;
         create table &var._summary as
         select 
@@ -181,13 +180,9 @@ run;
 %churn_full(activity_status, Dropout Rate by Activity Level);
 %churn_full(treatment_group, Dropout Rate by Treatment Duration);
 %churn_full(gender, Dropout Rate by Gender);
-
-
 /* PREDICTION MODEL */
-
 proc logistic data=tracking descending;
     class gender treatment_group activity_status recency value / param=ref;
-
     model dropout_flag =
         age 
         treatment_duration 
@@ -200,23 +195,17 @@ proc logistic data=tracking descending;
         recency 
         value;
 run;
-
-
 /* ODS REPORTING */
-
 ods pdf file='/home/u61944720/final_report.pdf';
-
 /* Frequency Tables */
 proc freq data=tracking;
     tables recency * dropout_flag;
 run;
-
 /* Summary Statistics */
 proc means data=tracking;
     class dropout_flag;
     var treatment_duration treatment_cost;
 run;
-
 /* Include Model Output */
 proc logistic data=tracking descending;
     class gender treatment_group activity_status recency value / param=ref;
@@ -225,5 +214,4 @@ proc logistic data=tracking descending;
         age treatment_duration treatment_cost visit_count_last_60_days days_since_last_visit
         gender treatment_group activity_status recency value;
 run;
-
 ods pdf close;
